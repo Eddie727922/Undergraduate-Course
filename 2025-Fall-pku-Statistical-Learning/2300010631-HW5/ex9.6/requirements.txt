@@ -1,0 +1,8 @@
+pandas
+numpy
+scikit-learn
+matplotlib
+pygam
+pyearth
+# PRIM optional; several implementations exist (primpy, prim)
+# primpy

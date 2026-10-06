@@ -1,0 +1,16 @@
+\contentsline {section}{\numberline {1}问题描述}{2}{section.1}%
+\contentsline {section}{\numberline {2}评价指标}{2}{section.2}%
+\contentsline {section}{\numberline {3}问题求解}{3}{section.3}%
+\contentsline {subsection}{\numberline {3.1}CVX直接求解原问题}{3}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}直接调用Mosek和Gurobi求解原问题}{4}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}连续化策略}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}次梯度算法求解原问题}{6}{subsection.3.4}%
+\contentsline {subsection}{\numberline {3.5}梯度下降法求解原问题}{6}{subsection.3.5}%
+\contentsline {subsection}{\numberline {3.6}Nesterov加速梯度下降法求解原问题}{9}{subsection.3.6}%
+\contentsline {subsection}{\numberline {3.7}近似梯度下降法求解原问题}{10}{subsection.3.7}%
+\contentsline {subsection}{\numberline {3.8}FISTA求解原问题}{13}{subsection.3.8}%
+\contentsline {subsection}{\numberline {3.9}增广拉格朗日函数法求解对偶问题}{13}{subsection.3.9}%
+\contentsline {subsection}{\numberline {3.10}交替方向乘子法求解对偶问题}{15}{subsection.3.10}%
+\contentsline {subsection}{\numberline {3.11}交替方向乘子法求解原问题}{16}{subsection.3.11}%
+\contentsline {section}{\numberline {4}实验结果}{18}{section.4}%
+\contentsline {section}{\numberline {5}参考资料}{19}{section.5}%

@@ -1,0 +1,287 @@
+---
+title: "Ex 8.6"
+author: "吴羽迪"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,    
+  warning = FALSE, 
+  message = FALSE, 
+  fig.align = "center"
+)
+```
+
+### part(a)
+
+```{r part(a)}
+library(ggplot2)
+library(splines)
+library(dplyr)
+
+bmd <- read.table("bmd.dat", header = TRUE)
+
+bmd_male <- bmd %>% filter(gender == "male")
+bmd_female <- bmd %>% filter(gender == "female")
+
+spline_fit_male <- smooth.spline(bmd_male$age, bmd_male$spnbmd, cv = TRUE)
+spline_fit_female <- smooth.spline(bmd_female$age, bmd_female$spnbmd, cv = TRUE)
+
+cat("lambda_male:", spline_fit_male$lambda, "\n")
+cat("df_male:", spline_fit_male$df, "\n")
+cat("lambda_female:", spline_fit_female$lambda, "\n")
+cat("df_female:", spline_fit_female$df, "\n")
+
+age_grid <- seq(min(bmd$age), max(bmd$age), length = 200)
+
+pred_male <- predict(spline_fit_male, age_grid)
+pred_female <- predict(spline_fit_female, age_grid)
+
+#confidence intervals
+sigma_male <- sd(bmd_male$spnbmd)
+sigma_female <- sd(bmd_female$spnbmd)
+
+se_band_male <- sigma_male * sqrt(1/length(bmd_male$age))
+se_band_female <- sigma_female * sqrt(1/length(bmd_female$age))
+
+z_value <- qnorm(0.95)
+
+plot_data <- data.frame(
+  age = rep(age_grid, 2),
+  fitted = c(pred_male$y, pred_female$y),
+  conf_lower = c(pred_male$y - z_value * se_band_male, 
+                 pred_female$y - z_value * se_band_female),
+  conf_upper = c(pred_male$y + z_value * se_band_male, 
+                 pred_female$y + z_value * se_band_female),
+  gender = rep(c("male", "female"), each = length(age_grid))
+)
+
+ggplot() +
+  geom_point(data = bmd_male, aes(x = age, y = spnbmd), 
+             color = "blue", size = 1, alpha = 0.7) +
+  geom_point(data = bmd_female, aes(x = age, y = spnbmd), 
+             color = "red", size = 1, alpha = 0.7) +
+  geom_line(data = plot_data %>% filter(gender == "male"), 
+            aes(x = age, y = fitted), 
+            color = "blue", size = 0.7) +
+  geom_line(data = plot_data %>% filter(gender == "female"), 
+            aes(x = age, y = fitted), 
+            color = "red", size = 0.7) +
+  geom_ribbon(data = plot_data %>% filter(gender == "male"), 
+              aes(x = age, ymin = conf_lower, ymax = conf_upper),
+              alpha = 0.2, fill = "lightblue") +
+  geom_ribbon(data = plot_data %>% filter(gender == "female"), 
+              aes(x = age, ymin = conf_lower, ymax = conf_upper),
+              alpha = 0.2, fill = "pink") +
+  labs(title = "Cubic Smoothing Spline Fit for Spinal BMD by Gender",
+       x = "Age",
+       y = "Relative Spinal BMD") +
+  theme_minimal()
+```
+
+### part(b)
+```{r part(b)}
+library(MASS)
+
+create_basis <- function(x, df = 10) {
+  ns(x, df = df)
+}
+
+bayesian_smooth <- function(x, y, x_pred, df = 12, tau = 1, sigma2 = NULL) {
+
+  H <- create_basis(x, df = df)
+  H_pred <- create_basis(x_pred, df = df)
+  
+  # prior matrix
+  Sigma_prior <- diag(df)
+  if (is.null(sigma2)) {
+    lm_fit <- lm(y ~ H - 1)
+    sigma2 <- summary(lm_fit)$sigma^2
+  }
+  
+  # protestor
+  I <- diag(ncol(H))
+  posterior_cov <- solve(t(H) %*% H + (sigma2/tau) * solve(Sigma_prior)) * sigma2
+  posterior_mean <- posterior_cov %*% t(H) %*% y / sigma2
+  
+  mu_pred <- H_pred %*% posterior_mean
+  mu_cov <- H_pred %*% posterior_cov %*% t(H_pred)
+  
+  return(list(
+    mu_pred = as.numeric(mu_pred),
+    mu_se = sqrt(diag(mu_cov)),
+    posterior_mean = posterior_mean,
+    posterior_cov = posterior_cov
+  ))
+}
+
+# bayes method
+age_grid <- seq(min(bmd$age), max(bmd$age), length = 200)
+
+bayes_male <- bayesian_smooth(bmd_male$age, bmd_male$spnbmd, age_grid, df = 6, tau = 1)
+bayes_female <- bayesian_smooth(bmd_female$age, bmd_female$spnbmd, age_grid, df = 8, tau = 1)
+
+# 90% credible intervals
+z_value <- qnorm(0.95)
+bayes_conf_lower_male <- bayes_male$mu_pred - z_value * bayes_male$mu_se 
+bayes_conf_upper_male <- bayes_male$mu_pred + z_value * bayes_male$mu_se 
+bayes_conf_lower_female <- bayes_female$mu_pred - z_value * bayes_female$mu_se 
+bayes_conf_upper_female <- bayes_female$mu_pred + z_value * bayes_female$mu_se 
+
+spline_fit_male <- smooth.spline(bmd_male$age, bmd_male$spnbmd, cv = TRUE)
+spline_fit_female <- smooth.spline(bmd_female$age, bmd_female$spnbmd, cv = TRUE)
+
+pred_male <- predict(spline_fit_male, age_grid)
+pred_female <- predict(spline_fit_female, age_grid)
+
+
+residuals_male <- bmd_male$spnbmd - predict(spline_fit_male, bmd_male$age)$y
+residuals_female <- bmd_female$spnbmd - predict(spline_fit_female, bmd_female$age)$y
+
+sigma_male <- sd(residuals_male)
+sigma_female <- sd(residuals_female)
+
+se_band_male <- sigma_male 
+se_band_female <- sigma_female 
+
+freq_conf_lower_male <- pred_male$y - z_value * se_band_male 
+freq_conf_upper_male <- pred_male$y + z_value * se_band_male 
+freq_conf_lower_female <- pred_female$y - z_value * se_band_female 
+freq_conf_upper_female <- pred_female$y + z_value * se_band_female
+
+
+comparison_data <- data.frame(
+  age = rep(age_grid, 4),
+  method = rep(rep(c("Bayesian", "Frequentist"), each = length(age_grid)), 2),
+  gender = rep(c("male", "female"), each = 2 * length(age_grid)),
+  fitted = c(bayes_male$mu_pred, pred_male$y, bayes_female$mu_pred, pred_female$y),
+  conf_lower = c(bayes_conf_lower_male, freq_conf_lower_male, 
+                 bayes_conf_lower_female, freq_conf_lower_female),
+  conf_upper = c(bayes_conf_upper_male, freq_conf_upper_male, 
+                 bayes_conf_upper_female, freq_conf_upper_female)
+)
+
+p_comparison <- ggplot() +
+  geom_point(data = bmd_male, aes(x = age, y = spnbmd), 
+             color = "blue", size = 1, alpha = 0.5) +
+  geom_point(data = bmd_female, aes(x = age, y = spnbmd), 
+             color = "red", size = 1, alpha = 0.5) +
+  geom_line(data = comparison_data %>% filter(method == "Bayesian"), 
+            aes(x = age, y = fitted, color = gender, linetype = method), 
+            linewidth = 0.7) +
+  geom_ribbon(data = comparison_data %>% filter(method == "Bayesian"), 
+              aes(x = age, ymin = conf_lower, ymax = conf_upper, fill = gender),
+              alpha = 0.2) +
+  geom_line(data = comparison_data %>% filter(method == "Frequentist"), 
+            aes(x = age, y = fitted, color = gender, linetype = method), 
+            linewidth = 0.7) +
+  scale_color_manual(values = c("male" = "blue", "female" = "red")) +
+  scale_fill_manual(values = c("male" = "lightblue", "female" = "pink")) +
+  scale_linetype_manual(values = c("Bayesian" = "solid", "Frequentist" = "dashed")) +
+  labs(title = "Comparison of Bayesian and Frequentist Smoothing Methods",
+       x = "Age (years)",
+       y = "Relative Spinal BMD") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+print(p_comparison)
+```
+
+### part(c)
+```{r part(c)}
+create_basis <- function(x, df = 10) {
+  ns(x, df = df)
+}
+
+bayesian_smooth <- function(x, y, x_pred, df = 10, tau = 1, sigma2 = NULL) {
+  H <- create_basis(x, df = df)
+  H_pred <- create_basis(x_pred, df = df)
+  
+  Sigma_prior <- diag(df)
+  if (is.null(sigma2)) {
+    lm_fit <- lm(y ~ H - 1)
+    sigma2 <- summary(lm_fit)$sigma^2
+  }
+  
+  # protestor
+  I <- diag(ncol(H))
+  posterior_cov <- solve(t(H) %*% H + (sigma2/tau) * solve(Sigma_prior)) * sigma2
+  posterior_mean <- posterior_cov %*% t(H) %*% y / sigma2
+  
+  # predict values
+  mu_pred <- H_pred %*% posterior_mean
+  
+  return(as.numeric(mu_pred))
+}
+bootstrap_fits <- function(x, y, x_pred, n_bootstrap = 100, df = 10, tau = 1) {
+  n <- length(x)
+  bootstrap_fits <- matrix(NA, nrow = length(x_pred), ncol = n_bootstrap)
+  
+  # bootstrap  
+  for (i in 1:n_bootstrap) {
+    bootstrap_indices <- sample(1:n, n, replace = TRUE)
+    x_boot <- x[bootstrap_indices]
+    y_boot <- y[bootstrap_indices]
+    
+    tryCatch({
+      bootstrap_fits[, i] <- bayesian_smooth(x_boot, y_boot, x_pred, df = df, tau = tau)
+    }, error = function(e) {
+      bootstrap_fits[, i] <- NA
+    })
+  }
+  
+  return(bootstrap_fits)
+}
+
+age_grid <- seq(min(bmd$age), max(bmd$age), length = 100)
+
+
+set.seed(123) 
+n_bootstrap <- 100
+bootstrap_male <- bootstrap_fits(bmd_male$age, bmd_male$spnbmd, age_grid, n_bootstrap = n_bootstrap)
+bootstrap_female <- bootstrap_fits(bmd_female$age, bmd_female$spnbmd, age_grid, n_bootstrap = n_bootstrap)
+
+# choose 10 bootstrap spines for the plot
+n_plot <- 10
+selected_indices <- sample(1:n_bootstrap, n_plot)
+
+bootstrap_data <- data.frame(
+  age = rep(age_grid, n_plot * 2),
+  value = c(
+    as.vector(bootstrap_male[, selected_indices]),
+    as.vector(bootstrap_female[, selected_indices])
+  ),
+  replicate = rep(rep(1:n_plot, each = length(age_grid)), 2),
+  gender = rep(c("male", "female"), each = length(age_grid) * n_plot)
+)
+
+original_male <- bayesian_smooth(bmd_male$age, bmd_male$spnbmd, age_grid)
+original_female <- bayesian_smooth(bmd_female$age, bmd_female$spnbmd, age_grid)
+
+original_data <- data.frame(
+  age = rep(age_grid, 2),
+  value = c(original_male, original_female),
+  gender = rep(c("male", "female"), each = length(age_grid))
+)
+
+p_bootstrap <- ggplot() +
+  geom_point(data = bmd, aes(x = age, y = spnbmd, color = gender), 
+             size = 1, alpha = 0.7) +
+  geom_line(data = bootstrap_data, 
+            aes(x = age, y = value, group = interaction(gender, replicate), 
+                color = gender),
+            alpha = 0.5, linewidth = 0.3) +
+  geom_line(data = original_data, 
+            aes(x = age, y = value, color = gender),
+            linewidth = 1.2) +
+  scale_color_manual(values = c("male" = "blue", "female" = "red")) +
+  labs(title = paste("Bootstrap Replicates of Fitted Curves (", n_plot, " of ", n_bootstrap, " shown)", sep=""),
+       x = "Age (years)",
+       y = "Relative Spinal BMD") +
+  theme_minimal() +
+  theme(legend.position = "bottom")
+
+print(p_bootstrap)
+```

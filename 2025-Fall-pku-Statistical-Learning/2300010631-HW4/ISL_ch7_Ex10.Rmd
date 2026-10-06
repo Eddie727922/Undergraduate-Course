@@ -1,0 +1,244 @@
+---
+title: "ISL_Page_ch7_Ex10"
+author: "吴羽迪2300010631"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r part(a)}
+# 加载必要包
+library(ISLR)
+library(leaps)   
+library(mgcv)    
+library(ggplot2)  
+library(dplyr)    
+library(caret) 
+library(patchwork) # 用于图形组合
+
+# 数据准备与预处理
+data(College)
+college_data <- College
+
+# 将因子变量转换为数值，创建处理后的数据集
+college_processed <- college_data %>%
+  mutate(Private = as.numeric(Private == "Yes"))
+
+# 创建训练集和测试集
+set.seed(456) # 使用不同的随机种子
+train_idx <- createDataPartition(college_processed$Outstate, p = 0.75, list = FALSE) # 75%训练集
+train_set <- college_processed[train_idx, ]
+test_set <- college_processed[-train_idx, ]
+
+### 部分(a): 变量选择 - 使用不同的方法
+cat("=== 部分(a): 变量选择 ===\n")
+
+# 方法：使用交叉验证选择最佳变量子集
+predictors <- names(train_set)[!names(train_set) %in% "Outstate"]
+
+# 使用交叉验证进行变量选择
+train_control <- trainControl(method = "cv", number = 5)
+lm_model <- train(Outstate ~ ., 
+                  data = train_set,
+                  method = "leapForward",
+                  tuneGrid = data.frame(nvmax = 1:10),
+                  trControl = train_control)
+
+# 获取最佳变量
+best_size <- lm_model$bestTune$nvmax
+final_coefs <- coef(lm_model$finalModel, best_size)
+selected_predictors <- names(final_coefs)[-1] # 移除截距项
+
+cat("基于交叉验证选择的最佳变量数量:", best_size, "\n")
+cat("选中的重要预测变量:\n")
+print(selected_predictors)
+
+# 可视化变量选择过程
+var_selection_plot <- ggplot(data.frame(
+  nvmax = 1:10,
+  RMSE = lm_model$results$RMSE
+), aes(x = nvmax, y = RMSE)) +
+  geom_line(color = "steelblue", size = 1.2) +
+  geom_point(color = "red", size = 3) +
+  geom_vline(xintercept = best_size, linetype = "dashed", color = "darkgreen") +
+  labs(title = "变量数量与模型性能",
+       x = "变量数量", y = "交叉验证RMSE") +
+  theme_minimal()
+
+print(var_selection_plot)
+```
+
+
+```{r part(b)}
+### 部分(b): GAM模型构建 - 使用不同的平滑函数
+cat("\n=== 部分(b): GAM模型构建 ===\n")
+
+# 构建GAM公式 - 对连续变量使用不同的平滑参数
+continuous_vars <- selected_predictors[sapply(train_set[selected_predictors], is.numeric)]
+continuous_vars <- continuous_vars[continuous_vars != "Private"] # 排除二值变量
+
+# 为不同变量设置不同的平滑参数
+gam_terms <- c()
+if("Private" %in% selected_predictors) {
+  gam_terms <- c(gam_terms, "Private")
+}
+
+for(var in continuous_vars) {
+  # 根据变量特性设置不同的平滑参数
+  if(var %in% c("Expend", "Room.Board")) {
+    gam_terms <- c(gam_terms, paste0("s(", var, ", k=8)")) # 更多自由度
+  } else {
+    gam_terms <- c(gam_terms, paste0("s(", var, ", k=5)")) # 默认自由度
+  }
+}
+
+gam_formula <- as.formula(paste("Outstate ~", paste(gam_terms, collapse = " + ")))
+cat("GAM模型公式:\n")
+print(gam_formula)
+
+# 拟合GAM模型
+gam_model <- gam(gam_formula, data = train_set, method = "REML")
+
+# 模型摘要
+cat("\nGAM模型摘要:\n")
+print(summary(gam_model))
+
+# 绘制平滑效应图
+smooth_plots <- plot(gam_model, pages = 1, rug = TRUE, seWithMean = TRUE, 
+                     shade = TRUE, shade.col = "lightblue")
+title("GAM模型变量平滑效应", outer = TRUE)
+```
+
+
+```{r part(c)}
+### 部分(c): 模型评估 - 使用更多评估指标
+cat("\n=== 部分(c): 模型性能评估 ===\n")
+
+# 预测
+train_pred <- predict(gam_model, newdata = train_set)
+test_pred <- predict(gam_model, newdata = test_set)
+
+# 计算多种评估指标
+calculate_metrics <- function(actual, predicted) {
+  rmse <- sqrt(mean((actual - predicted)^2))
+  mae <- mean(abs(actual - predicted))
+  mape <- mean(abs((actual - predicted)/actual)) * 100
+  rsq <- 1 - sum((actual - predicted)^2) / sum((actual - mean(actual))^2)
+  
+  return(c(RMSE = rmse, MAE = mae, MAPE = mape, R_squared = rsq))
+}
+
+train_metrics <- calculate_metrics(train_set$Outstate, train_pred)
+test_metrics <- calculate_metrics(test_set$Outstate, test_pred)
+
+results_df <- data.frame(
+  指标 = names(train_metrics),
+  训练集 = round(train_metrics, 4),
+  测试集 = round(test_metrics, 4)
+)
+
+print("模型性能评估结果:")
+print(results_df)
+
+# 创建预测vs实际值图形
+pred_actual_data <- rbind(
+  data.frame(Set = "训练集", Actual = train_set$Outstate, Predicted = train_pred),
+  data.frame(Set = "测试集", Actual = test_set$Outstate, Predicted = test_pred)
+)
+
+pred_plot <- ggplot(pred_actual_data, aes(x = Actual, y = Predicted, color = Set)) +
+  geom_point(alpha = 0.6) +
+  geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+  facet_wrap(~ Set, scales = "free") +
+  labs(title = "预测值 vs 实际值",
+       x = "实际Outstate值", y = "预测Outstate值") +
+  theme_minimal() +
+  scale_color_manual(values = c("训练集" = "blue", "测试集" = "darkgreen"))
+
+print(pred_plot)
+```
+
+
+```{r part(d)}
+### 部分(d): 非线性关系分析 - 深入分析
+cat("\n=== 部分(d): 非线性关系分析 ===\n")
+
+# 提取平滑项统计信息
+smooth_summary <- summary(gam_model)$s.table
+smooth_df <- as.data.frame(smooth_summary)
+smooth_df$Variable <- rownames(smooth_df)
+
+# 清理变量名
+smooth_df$CleanVar <- gsub("s\\(|\\)|,.*", "", smooth_df$Variable)
+
+# 创建非线性关系分析表格
+nonlinear_analysis <- smooth_df %>%
+  select(Variable = CleanVar, 
+         有效自由度 = edf, 
+         参考自由度 = Ref.df, 
+         F统计量 = F, 
+         P值 = `p-value`) %>%
+  mutate(显著性 = ifelse(P值 < 0.05, "显著", "不显著"),
+         非线性强度 = case_when(
+            abs(有效自由度 - 1) > 2 ~ "强非线性",
+            abs(有效自由度 - 1) > 1 ~ "中等非线性", 
+            TRUE ~ "弱非线性/线性"
+         ))
+
+print("非线性关系详细分析:")
+print(nonlinear_analysis)
+
+# 识别具有显著非线性关系的变量
+significant_nonlinear <- nonlinear_analysis %>%
+  filter(显著性 == "显著", 非线性强度 != "弱非线性/线性")
+
+if(nrow(significant_nonlinear) > 0) {
+  cat("\n具有显著非线性关系的变量:\n")
+  print(significant_nonlinear$Variable)
+  
+  # 为重点非线性变量创建详细图形
+  par(mfrow = c(2, 2))
+  for(i in 1:min(4, nrow(significant_nonlinear))) {
+    var_name <- significant_nonlinear$Variable[i]
+    plot(gam_model, select = i, main = paste(var_name, "- 非线性关系"),
+         ylab = paste("对Outstate的影响"), 
+         xlab = var_name,
+         shade = TRUE, shade.col = "lightblue",
+         rug = TRUE)
+  }
+} else {
+  cat("\n未发现显著的强非线性关系\n")
+}
+
+# 模型诊断
+cat("\n模型诊断信息:\n")
+gam_check <- gam.check(gam_model)
+print(gam_check)
+
+# 最终总结
+cat("\n=== 分析总结 ===\n")
+cat("1. 通过交叉验证选择了", best_size, "个重要预测变量\n")
+cat("2. GAM模型在测试集上的解释方差(R²)为:", round(test_metrics["R_squared"], 4), "\n")
+cat("3. 发现", nrow(significant_nonlinear), "个变量具有显著的非线性关系\n")
+cat("4. 模型预测误差(RMSE):", round(test_metrics["RMSE"], 2), "\n")
+
+# 残差分析
+residual_analysis <- data.frame(
+  拟合值 = fitted(gam_model),
+  残差 = residuals(gam_model)
+)
+
+resid_plot <- ggplot(residual_analysis, aes(x = 拟合值, y = 残差)) +
+  geom_point(alpha = 0.6, color = "blue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  geom_smooth(method = "loess", color = "darkgreen", se = FALSE) +
+  labs(title = "残差分析图", 
+       x = "拟合值", y = "残差") +
+  theme_minimal()
+
+print(resid_plot)
+```
+

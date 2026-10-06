@@ -1,0 +1,3 @@
+Ex. 15.6 Fit a series of random-forest classifiers to the spam data, to explore
+the sensitivity to the parameter m. Plot both the oob error as well as the
+test error against a suitably chosen range of values for m.

@@ -1,0 +1,119 @@
+---
+title: "ISL_ch7_Ex11"
+author: "吴羽迪"
+date: "2025-11-10"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### part(a)
+
+我们假设模型为
+$$Y=2.5+3.8X_1^2+2.3X_2^{0.5}+\varepsilon$$
+并生成100个随机数。
+
+```{r part a}
+library(ISLR)
+library(leaps)   
+library(mgcv)    
+library(ggplot2)  
+library(dplyr)    
+library(caret) 
+
+# (a) 生成数据
+set.seed(456) 
+
+n <- 100
+X1 <- runif(n, -2, 2)
+X2 <- rnorm(n, mean = 1, sd = 0.5)  
+epsilon <- rnorm(n, sd = 8)  
+Y <- 2.5 + 3.8 * X1 ** 2 + 2.3 * X2 ** 0.5 + epsilon
+```
+
+### part(b-e)
+
+```{r part b-e}
+
+# (b) 初始化β2
+beta2 <- 1.0 
+
+results <- matrix(NA, nrow = 12, ncol = 3) 
+colnames(results) <- c("beta0", "beta1", "beta2")
+
+# (e) 迭代过程 
+for (i in 1:12) {  
+  # 先固定β2，更新β1
+  a <- Y - beta2 * X2
+  model_c <- lm(a ~ X1)
+  beta1 <- coef(model_c)[2]
+  beta0_temp <- coef(model_c)[1]
+  
+  # 再固定β1，更新β2
+  a <- Y - beta1 * X1
+  model_d <- lm(a ~ X2)
+  beta2 <- coef(model_d)[2]
+  beta0 <- coef(model_d)[1]
+
+  results[i, ] <- c(beta0, beta1, beta2)
+}
+```
+
+### part(f)
+```{r part f}
+# (f) 结果分析
+# iteration map - 改变图形样式
+plot(1:12, results[, "beta0"], type = "b", col = "darkred", pch = 16,
+     ylim = range(results), xlab = "迭代次数", ylab = "系数估计",
+     main = "坐标下降法参数收敛过程")
+lines(1:12, results[, "beta1"], type = "b", col = "navy", pch = 16)
+lines(1:12, results[, "beta2"], type = "b", col = "darkgreen", pch = 16)
+legend("topright", legend = c("β0", "β1", "β2"), 
+       col = c("darkred", "navy", "darkgreen"), lty = 1, pch = 16)
+
+mlr_model <- lm(Y ~ X1 + X2)
+mlr_coef <- coef(mlr_model)
+
+abline(h = mlr_coef[1], col = "darkred", lty = 2, lwd = 1.5)
+abline(h = mlr_coef[2], col = "navy", lty = 2, lwd = 1.5)
+abline(h = mlr_coef[3], col = "darkgreen", lty = 2, lwd = 1.5)
+
+legend("bottomright", legend = "虚线: 多元线性回归基准", 
+       lty = 2, lwd = 1.5, bty = "n")
+
+cat("多元线性回归结果:\n")
+print(mlr_coef)
+
+cat("\n坐标下降法最终结果:\n")
+cat("β0 =", round(results[12, "beta0"], 4), "\n")
+cat("β1 =", round(results[12, "beta1"], 4), "\n")
+cat("β2 =", round(results[12, "beta2"], 4), "\n")
+```
+
+### part(g)
+```{r part g}
+# (g) 迭代次数
+differences <- apply(results, 1, function(x) mean(abs(x - mlr_coef)))
+
+threshold <- 0.005  
+converged_iter <- which(differences < threshold)[1]
+
+if (!is.na(converged_iter)) {
+  cat(sprintf("\n达到良好近似所需的迭代次数: %d (平均绝对差异 < %.4f)\n", 
+              converged_iter, threshold))
+} else {
+  cat(sprintf("\n在%d次迭代内未达到平均绝对差异 < %.4f的阈值\n", 
+              12, threshold))
+  min_diff_iter <- which.min(differences)
+  cat(sprintf("最小差异出现在第%d次迭代，差异值为: %.6f\n", 
+              min_diff_iter, differences[min_diff_iter]))
+}
+
+plot(1:12, differences, type = "b", col = "purple", pch = 17,
+     xlab = "迭代次数", ylab = "平均绝对差异",
+     main = "收敛情况分析")
+abline(h = threshold, col = "red", lty = 2, lwd = 2)
+legend("topright", legend = paste("阈值 =", threshold), 
+       col = "red", lty = 2, lwd = 2, bty = "n")
